@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  attempts     Attempt[]
+  chatMessages ChatMessage[]
+  sessionParticipants SessionParticipant[]
+}
+
+model Session {
+  id           String                @id @default(cuid())
+  problem      Problem?              @relation(fields: [problemId], references: [id])
+  problemId    Int?
+  status       String                @default("active") // "active" | "ended"
+  createdAt    DateTime              @default(now())
+  participants SessionParticipant[]
+  messages     ChatMessage[]
+}
+
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  text      String
+  sentAt    DateTime @default(now())
+}
+
+model SessionParticipant {
+  id        Int      @id @default(autoincrement())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  role      String   @default("editor") // "editor" | "viewer"
+  joinedAt  DateTime @default(now())
+
+  @@unique([sessionId, userId])
+}
+
+model Problem {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String
+  difficulty  String
+  examples    Json?
+  tests       Json?
+  attempts    Attempt[]
+  //back relations
+  sessions    Session[]
+  testCases   TestCase[]
+}
+
+enum AttemptStatus {
+  SUBMITTED   // accepted by API, not judged yet
+  PASSED      // all tests passed
+  FAILED      // at least one test failed
+  ERROR       // runtime/compile/system error
+}
+
+
+model Attempt {
+  id          Int           @id @default(autoincrement())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      Int
+  problem     Problem       @relation(fields: [problemId], references: [id])
+  problemId   Int
+
+  code        String
+  language    String        @default("typescript")
+  status      AttemptStatus @default(SUBMITTED)
+  passedCount Int           @default(0)
+  totalCount  Int           @default(0)
+  runtimeMs   Int?          // optional perf metric
+  submittedAt DateTime      @default(now())
+  errorMessage String?
+  logs         String?
+  @@index([userId, problemId, status])
+  @@index([problemId, status])
+}
+
+model TestCase {
+  id        Int      @id @default(autoincrement())
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  problemId Int
+  input     Json     // e.g., [1,2] for args
+  expected  Json     // expected output
+  hidden    Boolean  @default(true)
+  ordinal   Int      @default(0)
+
+  @@index([problemId, hidden, ordinal])
+}
