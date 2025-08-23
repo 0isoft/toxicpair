@@ -55,34 +55,59 @@ export async function runAllTests(
 
   else if (language === "python") {
     for (const tc of tests) {
-      const inputJson = JSON.stringify(tc.input ?? []);
+      const argsJson = JSON.stringify(tc.input ?? []);
   
-      // NO leading spaces in this template
-      const py = `${code}
-  import json, sys
-  args = json.loads('${inputJson}')
-  out = solution(*args)
-  print(json.dumps(out))
-  `;
+      // Build a flat, left-justified Python program (no leading indentation).
+      const py =
+        `${code}\n` +
+        [
+          'if __name__ == "__main__":',
+          '    import sys, json',
+          '    try:',
+          '        args = json.loads(sys.argv[1]) if len(sys.argv) > 1 else []',
+          '        out = solution(*args)',
+          '        print(json.dumps(out))', // exactly one JSON line as the final output
+          '    except Exception as e:',
+          '        print(json.dumps({"__error__": str(e)}))',
+        ].join('\n');
   
       try {
-        const { stdout } = await execAsync(
-          // Safe single-quoted heredoc: shell won't expand anything
-          `python3 - <<'PY'\n${py}\nPY`,
-          { timeout: perTestMs }
-        );
+        // Send code via stdin (real newlines) and pass args as argv[1]
+        // Note: JSON never includes single quotes, so wrapping args in single quotes is safe.
+        const cmd = `python3 - '${argsJson}' <<'PY'\n${py}\nPY`;
+        const { stdout, stderr } = await execAsync(cmd, { timeout: perTestMs });
   
-        const text = stdout.trim();
+        if (stderr?.trim()) logs.push(`PY STDERR: ${stderr.trim().slice(0, 500)}`);
+  
+        const lastLine =
+          (stdout || '')
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .pop() || '';
+  
         let output: any;
-        try { output = JSON.parse(text); } catch { output = text; }
+        try { output = JSON.parse(lastLine); } catch { output = lastLine; }
   
-        if (deepEqual(output, tc.expected)) passed++;
-        else logs.push(`Expected ${JSON.stringify(tc.expected)}, got ${JSON.stringify(output)}`);
+        if (output && typeof output === 'object' && '__error__' in output) {
+          logs.push(`Python error: ${String((output as any).__error__)}`);
+        }
+  
+        if (deepEqual(output, tc.expected)) {
+          passed++;
+        } else {
+          logs.push(`Expected ${JSON.stringify(tc.expected)}, got ${JSON.stringify(output)}`);
+        }
       } catch (err: any) {
-        logs.push(`Python error: ${String(err.message).slice(0, 500)}`);
+        logs.push(`Python exec error: ${String(err.message).slice(0, 500)}`);
+        if (err.stdout) logs.push(`PY STDOUT: ${String(err.stdout).slice(0, 500)}`);
+        if (err.stderr) logs.push(`PY STDERR: ${String(err.stderr).slice(0, 500)}`);
       }
     }
   }
+  
+
+
   else if (language === "cpp" || language === "c++") {
     // ---- Run C++ code ----
     // Expect user code to have a main() that prints the result

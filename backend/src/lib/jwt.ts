@@ -6,6 +6,13 @@ const REFRESH_TTL = "7d";
 const JWT_SECRET = process.env.JWT_SECRET!;
 if (!JWT_SECRET) throw new Error("Missing JWT_SECRET");
 
+export type AccessPayload = {
+  sub: number;
+  email: string;
+  role: "USER" | "ADMIN";
+};
+
+
 // we create short lived access tokens (take a payload (userId, email), use 
 // a secret key from .env to produce a string, which expires in 15 mins
 export function signAccessToken(payload: object) {
@@ -23,3 +30,10 @@ export function verifyToken<T = any>(token: string): T {
 
 //jwt is a header.payload.signature,  we use this on register/login but also on
 //protected routes
+
+
+//helper
+export function signAccessTokenFromUser(user: { id: number; email: string; role: "USER" | "ADMIN" }) {
+  const payload: AccessPayload = { sub: user.id, email: user.email, role: user.role };
+  return signAccessToken(payload);
+}

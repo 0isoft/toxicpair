@@ -13,11 +13,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
   id           Int       @id @default(autoincrement())
   email        String    @unique
   passwordHash String
   createdAt    DateTime  @default(now())
+  role         UserRole  @default(USER) 
   attempts     Attempt[]
   chatMessages ChatMessage[]
   sessionParticipants SessionParticipant[]
@@ -71,6 +77,7 @@ model Problem {
 
 enum AttemptStatus {
   SUBMITTED   // accepted by API, not judged yet
+  RUNNING //this will be for redis
   PASSED      // all tests passed
   FAILED      // at least one test failed
   ERROR       // runtime/compile/system error
@@ -83,6 +90,9 @@ model Attempt {
   userId      Int
   problem     Problem       @relation(fields: [problemId], references: [id])
   problemId   Int
+
+  startedAt   DateTime?   // this for the redis worker/attempted queue
+  finishedAt  DateTime?   //
 
   code        String
   language    String        @default("typescript")

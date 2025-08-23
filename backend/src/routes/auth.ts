@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { z } from "zod";
 import bcrypt from "bcrypt";
-import { signAccessToken, signRefreshToken, verifyToken } from "../lib/jwt";
+import { signAccessToken, signRefreshToken, verifyToken, type AccessPayload } from "../lib/jwt";
 
 const router = Router();
 const Email = z.string().email();
@@ -25,8 +25,11 @@ router.post("/register", async (req, res) => {
   if (existing) return res.status(409).json({ error: "Email already in use" });
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({ data: { email, passwordHash } });
 
+  const user = await prisma.user.create({
+    data: { email, passwordHash },
+    select: { id: true, email: true, role: true },
+  });
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = signRefreshToken({ sub: user.id });
 
@@ -39,7 +42,10 @@ router.post("/login", async (req, res) => {
   if (!parse.success) return res.status(400).json({ error: "Invalid payload" });
   const { email, password } = parse.data;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, passwordHash: true, role: true },
+  });
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
   const ok = await bcrypt.compare(password, user.passwordHash);
@@ -58,7 +64,10 @@ router.post("/refresh", async (req, res) => {
 
   try {
     const payload = verifyToken<{ sub: number }>(token);
-    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, role: true },
+    });
     if (!user) return res.status(401).json({ error: "Unknown user" });
 
     const accessToken = signAccessToken({ sub: user.id, email: user.email });
@@ -80,7 +89,7 @@ router.get("/me", async (req, res) => {
     const payload = verifyToken<{ sub: number }>(token);
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, createdAt: true },
+      select: { id: true, email: true, createdAt: true, role: true },
     });
     if (!user) return res.status(404).json({ error: "Not found" });
     res.json(user);

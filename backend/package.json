@@ -11,7 +11,8 @@
     "dev": "nodemon --watch src --exec ts-node src/server.ts",
     "build": "tsc -p .",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:worker": "nodemon --watch src --ext ts --exec ts-node src/worker/index.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

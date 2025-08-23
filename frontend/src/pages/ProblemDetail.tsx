@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { Problem, Attempt } from "../lib/types";
+import { useEffect } from "react";
 
 function langStub(lang: string) {
   switch (lang) {
@@ -47,11 +48,28 @@ export default function ProblemDetail() {
   });
 
   // ----- Attempts list (only if logged in) -----
-  const { data: attempts, isLoading: loadingAttempts } = useQuery({
+  const attemptsQ = useQuery<Attempt[]>({
     queryKey: ["attempts", id],
     queryFn: () => api<Attempt[]>(`/attempts?problemId=${id}`),
     enabled: !!token && !!id,
+    refetchInterval: (q) => {
+      const latest = (q.state.data as Attempt[] | undefined)?.[0];
+      const s = latest?.status;
+      return s === "SUBMITTED" || s === "RUNNING" ? 1000 : false;
+    },
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
+  
+  // use these like before
+  const attempts = attemptsQ.data;
+  const loadingAttempts = attemptsQ.isLoading;
+  
+  const latest = useMemo<Attempt | null>(() => attempts?.[0] ?? null, [attempts]);
+  const isPending = !!latest && (latest.status === "SUBMITTED" || latest.status === "RUNNING");
+  
+
+  
 
   // ----- Editor state -----
   const [language, setLanguage] = useState<"javascript" | "python" | "cpp">("javascript");
@@ -63,6 +81,8 @@ export default function ProblemDetail() {
     // If the editor is empty or still equals previous stub, replace with new stub
     setCode((prev) => prev.trim() ? prev : langStub(next));
   }
+  const [lastLogs, setLastLogs] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // ----- Submit attempt -----
   const submit = useMutation({
@@ -74,16 +94,30 @@ export default function ProblemDetail() {
         body: JSON.stringify(body),
       });
     },
-    onMutate: () => setNote(null),
-    onSuccess: (res) => {
-      setNote(`Submitted: ${res.status} (${res.passedCount}/${res.totalCount}) in ${res.runtimeMs ?? 0} ms`);
-      // refresh attempts list
-      qc.invalidateQueries({ queryKey: ["attempts", id] });
-    },
+    onMutate: () => {
+        setNote(null);
+        setLastLogs(null);
+        setLastError(null);
+      },
+      onSuccess: async (summary) => {
+        setNote(`Submitted: ${summary.status} (${summary.passedCount}/${summary.totalCount}) in ${summary.runtimeMs ?? 0} ms`);
+        qc.invalidateQueries({ queryKey: ["attempts", id] });
+      
+        try {
+          const detail = await api<{ logs?: string; errorMessage?: string }>(`/attempts/${summary.id}`);
+          if (detail?.logs) {
+            setLastLogs(detail.logs);
+            setNote(prev => (prev ? prev + " — see logs below" : "See logs below"));
+          }
+          if (detail?.errorMessage) {
+            setLastError(detail.errorMessage);
+          }
+        } catch {
+          setLastError("Failed to load attempt details");
+        }
+      },
     onError: (err: any) => setNote(err?.message || "Submission failed"),
   });
-
-  const latest = useMemo(() => (attempts && attempts[0]) || null, [attempts]);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -157,6 +191,7 @@ export default function ProblemDetail() {
             {token && loadingAttempts && <p>Loading attempts…</p>}
             {token && attempts && attempts.length === 0 && <p className="text-sm text-gray-600">No attempts yet.</p>}
             {token && attempts && attempts.length > 0 && (
+                
               <ul className="divide-y border rounded">
                 {attempts.map((a) => (
                   <li key={a.id} className="px-3 py-2 text-sm flex items-center justify-between">
@@ -177,6 +212,22 @@ export default function ProblemDetail() {
                 Latest: <span className="font-medium">{latest.status}</span> ({latest.passedCount}/{latest.totalCount})
               </div>
             )}
+            {(lastError || lastLogs) && (
+  <details className="mt-3">
+    <summary className="cursor-pointer text-sm text-gray-700">View runner logs</summary>
+    {lastError && (
+      <div className="text-xs text-red-600 mb-2">
+        {lastError}
+      </div>
+    )}
+    {lastLogs && (
+      <pre className="bg-gray-50 border rounded p-3 text-xs overflow-auto whitespace-pre-wrap">
+        {lastLogs}
+      </pre>
+    )}
+  </details>
+)}
+
           </section>
         </>
       )}

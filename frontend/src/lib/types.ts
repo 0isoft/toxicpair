@@ -5,12 +5,18 @@ export type Problem = {
     description?: string | null;
     examples?: Record<string, unknown> | null;
   };
-  export type User = { id: number; email: string; createdAt: string };
-  
+
+  export type User = {
+    id: number;
+    email: string;
+    createdAt: string;
+    role: "USER" | "ADMIN";
+  };
+
   export type Attempt = {
     id: number;
     problemId: number;
-    status: "SUBMITTED" | "PASSED" | "FAILED" | "ERROR";
+    status: "SUBMITTED" | "RUNNING" | "PASSED" | "FAILED" | "ERROR";
     passedCount: number;
     totalCount: number;
     runtimeMs: number | null;

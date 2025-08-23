@@ -4,6 +4,7 @@ import { useApi } from "../lib/api";
 import type { User, AttemptSummary } from "../lib/types";
 import { Link } from "react-router-dom";
 
+
 export default function Profile() {
   const { token } = useAuth();
   const api = useApi();
@@ -45,12 +46,20 @@ export default function Profile() {
   {meQ.isLoading && <p>Loading profile…</p>}
   {meErr && <p className="text-red-600">Couldn’t load profile info.</p>}
   {me && (
-    <div className="rounded border p-4 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-      <div><span className="text-gray-500">ID:</span> {me.id}</div>
-      <div><span className="text-gray-500">Email:</span> {me.email}</div>
-      <div><span className="text-gray-500">Created:</span> {new Date(me.createdAt).toLocaleString()}</div>
+  <div className="rounded border p-4 grid grid-cols-1 sm:grid-cols-4 gap-2 text-sm">
+    <div><span className="text-gray-500">ID:</span> {me.id}</div>
+    <div><span className="text-gray-500">Email:</span> {me.email}</div>
+    <div><span className="text-gray-500">Created:</span> {new Date(me.createdAt).toLocaleString()}</div>
+    <div>
+      <span className="text-gray-500">Role:</span>{" "}
+      <span className={`px-2 py-0.5 rounded text-xs ${
+        me.role === "ADMIN" ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-800"
+      }`}>
+        {me.role}
+      </span>
     </div>
-  )}
+  </div>
+)}
 </section>
 
       <section>
