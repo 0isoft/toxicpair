@@ -67,9 +67,9 @@ jobs:
           sudo chmod 640 /etc/app/backend.env
 
           # Write the raw (multi-line) JSON secret
-          sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<JSON
-${{ secrets.FIREBASE_ADMIN_JSON }}
-JSON
+          sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<'JSON'
+          ${{ secrets.FIREBASE_ADMIN_JSON }}
+          JSON
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
           EOF
 
