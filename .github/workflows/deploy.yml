@@ -36,26 +36,28 @@ jobs:
             mkdir -p /opt/app/releases/${{ env.REL }}/backend
             mkdir -p /opt/app/releases/${{ env.REL }}/frontend
 
-      - name: Upload backend via rsync (with excludes)
-        uses: appleboy/rsync-action@v0.1.7
+      # ---- rsync uploads (supports excludes) ----
+      - name: Upload backend via rsync
+        uses: burnett01/rsync-deployments@v6.0.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "backend/"
-          target: "/opt/app/releases/${{ env.REL }}/backend/"
-          args: "-avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist' --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt'"
+          switches: -avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist' --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt'
+          path: backend/
+          remote_path: /opt/app/releases/${{ env.REL }}/backend/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Upload frontend via rsync (with excludes)
-        uses: appleboy/rsync-action@v0.1.7
+      - name: Upload frontend via rsync
+        uses: burnett01/rsync-deployments@v6.0.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "frontend/"
-          target: "/opt/app/releases/${{ env.REL }}/frontend/"
-          args: "-avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist'"
+          switches: -avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist'
+          path: frontend/
+          remote_path: /opt/app/releases/${{ env.REL }}/frontend/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
+      # ---- build & switch on the server ----
       - name: Build & switch on server
         uses: appleboy/ssh-action@v1.0.3
         env:
@@ -71,8 +73,8 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
           command_timeout: 30m
+          script_stop: true
           script: |
             set -e
             REL="${{ env.REL }}"
@@ -82,12 +84,12 @@ jobs:
             npm ci
             npm run build
 
-            # Flip symlink & restart API (service already reads /etc/app/backend.env)
+            # Flip symlink & restart API (unit reads /etc/app/backend.env)
             sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
             sudo systemctl restart app-backend
             sleep 1
 
-            # Frontend build (inject prod env)
+            # Frontend build with prod env
             cd /opt/app/releases/$REL/frontend
             cat > .env.production <<'ENV'
             VITE_API_BASE=${VITE_API_BASE}
