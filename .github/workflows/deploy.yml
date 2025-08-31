@@ -45,22 +45,20 @@ jobs:
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
             frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      # --- WRITE /etc/app/backend.env FROM GITHUB SECRETS (HARD REQUIRE), THEN VERIFY ---
-      - name: Sync secrets to /etc/app and Firebase JSON (HARDCODED) + verify
+      - name: Write /etc/app/backend.env + Firebase JSON, verify, and ensure systemd unit
         run: |
           ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
           set -euo pipefail
           sudo mkdir -p /etc/app /opt/app/secrets
 
-          # Fail fast if any required secrets are empty (as rendered by Actions)
-          # (These values are substituted by GitHub Actions BEFORE this runs.)
+          # Fail fast if any required secrets (from GitHub) are empty
           test -n "${{ secrets.JWT_SECRET }}" || { echo "[ERROR] JWT_SECRET missing"; exit 1; }
           test -n "${{ secrets.DATABASE_URL }}" || { echo "[ERROR] DATABASE_URL missing"; exit 1; }
           test -n "${{ secrets.DIRECT_URL }}" || { echo "[ERROR] DIRECT_URL missing"; exit 1; }
           test -n "${{ secrets.OPENAI_API_KEY }}" || { echo "[ERROR] OPENAI_API_KEY missing"; exit 1; }
           test -n "${{ secrets.ADMIN_EMAIL }}" || { echo "[ERROR] ADMIN_EMAIL missing"; exit 1; }
 
-          # Overwrite backend.env each deploy
+          # Overwrite backend.env on every deploy
           sudo tee /etc/app/backend.env >/dev/null <<ENV
           NODE_ENV=production
           PORT=3000
@@ -74,13 +72,11 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS=/opt/app/secrets/firebase-admin.json
           ENV
           sudo chmod 640 /etc/app/backend.env
+          sudo test -s /etc/app/backend.env
+          sudo grep -q '^DATABASE_URL=' /etc/app/backend.env
+          sudo grep -q '^JWT_SECRET=' /etc/app/backend.env
 
-          # Verify file is non-empty and critical keys present
-          sudo test -s /etc/app/backend.env || { echo "[ERROR] backend.env empty/missing"; exit 1; }
-          sudo grep -q '^DATABASE_URL=' /etc/app/backend.env || { echo "[ERROR] DATABASE_URL not written"; exit 1; }
-          sudo grep -q '^JWT_SECRET=' /etc/app/backend.env || { echo "[ERROR] JWT_SECRET not written"; exit 1; }
-
-          # Write the raw (multi-line) JSON secret (HARDCODED OVERRIDE)
+          # Hardcoded Firebase JSON (from your request)
           sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<'JSON'
           {
             "type": "service_account",
@@ -99,25 +95,25 @@ jobs:
           sudo chown ubuntu:ubuntu /opt/app/secrets/firebase-admin.json
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
 
-          # Ensure systemd unit exists; create if missing (idempotent)
+          # Ensure systemd unit exists; create if missing (no heredocs to upset YAML)
           if ! systemctl list-unit-files | grep -q '^app-backend.service'; then
             echo "[INFO] app-backend.service missing; creating"
-            sudo tee /etc/systemd/system/app-backend.service >/dev/null <<'UNIT'
-[Unit]
-Description=App Backend
-After=network.target
-
-[Service]
-EnvironmentFile=/etc/app/backend.env
-WorkingDirectory=/opt/app/current-backend
-ExecStart=/usr/bin/node dist/server.js
-Restart=always
-User=ubuntu
-Group=ubuntu
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+            sudo bash -c '{
+              echo "[Unit]"
+              echo "Description=App Backend"
+              echo "After=network.target"
+              echo
+              echo "[Service]"
+              echo "EnvironmentFile=/etc/app/backend.env"
+              echo "WorkingDirectory=/opt/app/current-backend"
+              echo "ExecStart=/usr/bin/node dist/server.js"
+              echo "Restart=always"
+              echo "User=ubuntu"
+              echo "Group=ubuntu"
+              echo
+              echo "[Install]"
+              echo "WantedBy=multi-user.target"
+            } > /etc/systemd/system/app-backend.service'
             sudo systemctl daemon-reload
             sudo systemctl enable app-backend
           fi
@@ -125,7 +121,6 @@ UNIT
 
       - name: Build, canary, flip, then frontend
         env:
-          # Frontend public env
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -155,7 +150,7 @@ UNIT
           npm ci
           npm run build
 
-          echo "==> Canary on :3001 (subshell to avoid leaking NODE_ENV)"
+          echo "==> Canary on :3001 (check body contains ok:true)"
           (
             set -euo pipefail
             set -a
@@ -176,13 +171,11 @@ UNIT
 
           echo "==> Flip symlink & restart"
           sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
-
-          # Ensure unit exists (paranoia) and restart
           systemctl list-unit-files | grep -q '^app-backend.service' || { echo "[ERROR] app-backend.service missing at flip"; exit 1; }
           sudo systemctl restart app-backend
           sleep 1
 
-          # Stronger backend health check (check body, not just 200)
+          echo "==> Backend health (body must contain ok:true)"
           curl -fsS http://127.0.0.1:3000/api/health | grep -q '"ok":true' || {
             echo "[ERROR] API not healthy"; journalctl -u app-backend -n 120 --no-pager || true; exit 1;
           }
