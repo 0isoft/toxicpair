@@ -15,51 +15,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Ensure rsync present
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Add host key
+      - name: Trust host key
         run: ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       - name: Create release dirs on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            set -e
-            sudo mkdir -p /opt/app/releases && sudo chown ubuntu:ubuntu /opt/app/releases
-            mkdir -p /opt/app/releases/${{ env.REL }}/backend
-            mkdir -p /opt/app/releases/${{ env.REL }}/frontend
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "mkdir -p /opt/app/releases/${REL}/{backend,frontend}"
 
-      # ---- rsync uploads (supports excludes) ----
-      - name: Upload backend via rsync
-        uses: burnett01/rsync-deployments@v6.0.0
-        with:
-          switches: -avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist' --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt'
-          path: backend/
-          remote_path: /opt/app/releases/${{ env.REL }}/backend/
-          remote_host: ${{ secrets.SSH_HOST }}
-          remote_user: ${{ secrets.SSH_USER }}
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Upload backend (rsync)
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
+            --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt' \
+            backend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/backend/
 
-      - name: Upload frontend via rsync
-        uses: burnett01/rsync-deployments@v6.0.0
-        with:
-          switches: -avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist'
-          path: frontend/
-          remote_path: /opt/app/releases/${{ env.REL }}/frontend/
-          remote_host: ${{ secrets.SSH_HOST }}
-          remote_user: ${{ secrets.SSH_USER }}
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Upload frontend (rsync)
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
+            frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      # ---- build & switch on the server ----
       - name: Build & switch on server
-        uses: appleboy/ssh-action@v1.0.3
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
@@ -69,45 +54,38 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 30m
-          script_stop: true
-          script: |
-            set -e
-            REL="${{ env.REL }}"
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          REL="${{ env.REL }}"
 
-            # Backend build
-            cd /opt/app/releases/$REL/backend
-            npm ci
-            npm run build
+          # --- Backend ---
+          cd /opt/app/releases/$REL/backend
+          npm ci
+          npm run build
 
-            # Flip symlink & restart API (unit reads /etc/app/backend.env)
-            sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
-            sudo systemctl restart app-backend
-            sleep 1
+          # Point stable symlink & restart API (unit should use /etc/app/backend.env)
+          sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
+          sudo systemctl restart app-backend
+          sleep 1
 
-            # Frontend build with prod env
-            cd /opt/app/releases/$REL/frontend
-            cat > .env.production <<'ENV'
-            VITE_API_BASE=${VITE_API_BASE}
-            VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
-            VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
-            VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
-            VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
-            VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET}
-            VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
-            VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
-            ENV
-            npm ci
-            npm run build
-            sudo rsync -av --delete dist/ /var/www/app/
+          # --- Frontend ---
+          cd /opt/app/releases/$REL/frontend
+          cat > .env.production <<ENV
+          VITE_API_BASE=${VITE_API_BASE}
+          VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
+          VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
+          VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
+          VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
+          VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
+          VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
+          ENV
+          npm ci
+          npm run build
+          sudo rsync -av --delete dist/ /var/www/app/
 
-            # Health checks
-            curl -sf https://api.agilehostile.com/api/health >/dev/null
-            curl -sf https://app.agilehostile.com >/dev/null
-
-      - name: Done
-        run: echo "Deployed $REL"
+          # Health checks
+          curl -sf https://api.agilehostile.com/api/health >/dev/null
+          curl -sf https://app.agilehostile.com >/dev/null
+          REMOTE
