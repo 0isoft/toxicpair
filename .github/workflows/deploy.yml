@@ -45,11 +45,20 @@ jobs:
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
             frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      - name: Sync secrets to /etc/app and Firebase JSON (HARDCODED)
+      # --- WRITE /etc/app/backend.env FROM GITHUB SECRETS (HARD REQUIRE), THEN VERIFY ---
+      - name: Sync secrets to /etc/app and Firebase JSON (HARDCODED) + verify
         run: |
           ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
           set -euo pipefail
           sudo mkdir -p /etc/app /opt/app/secrets
+
+          # Fail fast if any required secrets are empty (as rendered by Actions)
+          # (These values are substituted by GitHub Actions BEFORE this runs.)
+          test -n "${{ secrets.JWT_SECRET }}" || { echo "[ERROR] JWT_SECRET missing"; exit 1; }
+          test -n "${{ secrets.DATABASE_URL }}" || { echo "[ERROR] DATABASE_URL missing"; exit 1; }
+          test -n "${{ secrets.DIRECT_URL }}" || { echo "[ERROR] DIRECT_URL missing"; exit 1; }
+          test -n "${{ secrets.OPENAI_API_KEY }}" || { echo "[ERROR] OPENAI_API_KEY missing"; exit 1; }
+          test -n "${{ secrets.ADMIN_EMAIL }}" || { echo "[ERROR] ADMIN_EMAIL missing"; exit 1; }
 
           # Overwrite backend.env each deploy
           sudo tee /etc/app/backend.env >/dev/null <<ENV
@@ -65,6 +74,11 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS=/opt/app/secrets/firebase-admin.json
           ENV
           sudo chmod 640 /etc/app/backend.env
+
+          # Verify file is non-empty and critical keys present
+          sudo test -s /etc/app/backend.env || { echo "[ERROR] backend.env empty/missing"; exit 1; }
+          sudo grep -q '^DATABASE_URL=' /etc/app/backend.env || { echo "[ERROR] DATABASE_URL not written"; exit 1; }
+          sudo grep -q '^JWT_SECRET=' /etc/app/backend.env || { echo "[ERROR] JWT_SECRET not written"; exit 1; }
 
           # Write the raw (multi-line) JSON secret (HARDCODED OVERRIDE)
           sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<'JSON'
@@ -84,6 +98,29 @@ jobs:
           JSON
           sudo chown ubuntu:ubuntu /opt/app/secrets/firebase-admin.json
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
+
+          # Ensure systemd unit exists; create if missing (idempotent)
+          if ! systemctl list-unit-files | grep -q '^app-backend.service'; then
+            echo "[INFO] app-backend.service missing; creating"
+            sudo tee /etc/systemd/system/app-backend.service >/dev/null <<'UNIT'
+[Unit]
+Description=App Backend
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/app/backend.env
+WorkingDirectory=/opt/app/current-backend
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+User=ubuntu
+Group=ubuntu
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+            sudo systemctl daemon-reload
+            sudo systemctl enable app-backend
+          fi
           EOF
 
       - name: Build, canary, flip, then frontend
@@ -127,7 +164,7 @@ jobs:
             PORT=3001 nohup node dist/server.js >/tmp/app-canary.log 2>&1 &
             CANARY_PID=$!
             for i in {1..30}; do
-              if curl -fsS http://127.0.0.1:3001/api/health >/dev/null; then
+              if curl -fsS http://127.0.0.1:3001/api/health | grep -q '"ok":true'; then
                 echo "Canary healthy"
                 break
               fi
@@ -139,9 +176,16 @@ jobs:
 
           echo "==> Flip symlink & restart"
           sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
+
+          # Ensure unit exists (paranoia) and restart
+          systemctl list-unit-files | grep -q '^app-backend.service' || { echo "[ERROR] app-backend.service missing at flip"; exit 1; }
           sudo systemctl restart app-backend
           sleep 1
-          curl -fsS http://127.0.0.1:3000/api/health >/dev/null || { echo "[ERROR] API not healthy"; journalctl -u app-backend -n 120 --no-pager || true; exit 1; }
+
+          # Stronger backend health check (check body, not just 200)
+          curl -fsS http://127.0.0.1:3000/api/health | grep -q '"ok":true' || {
+            echo "[ERROR] API not healthy"; journalctl -u app-backend -n 120 --no-pager || true; exit 1;
+          }
 
           echo "==> Frontend build & publish"
           cd /opt/app/releases/$REL/frontend
@@ -156,14 +200,13 @@ jobs:
           VITE_FIREBASE_MEASUREMENT_ID=${{ env.VITE_FIREBASE_MEASUREMENT_ID }}
           EOV
 
-          # Ensure dev deps (tsc) are installed for the build
           unset NODE_ENV npm_config_production
           npm ci --include=dev
           npm run build
           sudo rsync -av --delete dist/ /var/www/app/
 
           echo "==> Public checks"
-          curl -fsS https://api.agilehostile.com/api/health >/dev/null
+          curl -fsS https://api.agilehostile.com/api/health | grep -q '"ok":true'
           curl -fsS https://app.agilehostile.com >/dev/null
           echo "==> Done."
           EOF
