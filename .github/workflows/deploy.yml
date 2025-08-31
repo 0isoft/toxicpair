@@ -129,7 +129,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
-        run: |
+                run: |
           ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
           set -euo pipefail
           REL="${{ env.REL }}"
@@ -171,7 +171,30 @@ jobs:
 
           echo "==> Flip symlink & restart"
           sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
-          systemctl list-unit-files | grep -q '^app-backend.service' || { echo "[ERROR] app-backend.service missing at flip"; exit 1; }
+
+          # Create unit here too (defensive), then restart
+          if ! systemctl list-unit-files | grep -q '^app-backend.service'; then
+            echo "[WARN] app-backend.service missing; creating at flip"
+            sudo bash -c '{
+              echo "[Unit]"
+              echo "Description=App Backend"
+              echo "After=network.target"
+              echo
+              echo "[Service]"
+              echo "EnvironmentFile=/etc/app/backend.env"
+              echo "WorkingDirectory=/opt/app/current-backend"
+              echo "ExecStart=/usr/bin/node dist/server.js"
+              echo "Restart=always"
+              echo "User=ubuntu"
+              echo "Group=ubuntu"
+              echo
+              echo "[Install]"
+              echo "WantedBy=multi-user.target"
+            } > /etc/systemd/system/app-backend.service'
+            sudo systemctl daemon-reload
+            sudo systemctl enable app-backend
+          fi
+
           sudo systemctl restart app-backend
           sleep 1
 
