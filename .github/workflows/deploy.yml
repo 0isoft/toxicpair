@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Ensure rsync present
+      - name: Install rsync
         run: sudo apt-get update && sudo apt-get install -y rsync
 
       - name: Start SSH agent
@@ -28,7 +28,7 @@ jobs:
 
       - name: Create release dirs on server
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+          ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "mkdir -p /opt/app/releases/${REL}/{backend,frontend}"
 
       - name: Upload backend (rsync)
@@ -44,8 +44,9 @@ jobs:
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
             frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      - name: Build & switch on server
+      - name: Build & switch on server (verbose)
         env:
+          # Frontend public env (set as Repository "Variables", not Secrets)
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -55,37 +56,49 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<EOF
           set -euo pipefail
           REL="${{ env.REL }}"
 
-          # --- Backend ---
-          cd /opt/app/releases/$REL/backend
-          npm ci
-          npm run build
+          echo "==> Using release: \$REL"
 
-          # Point stable symlink & restart API (unit should use /etc/app/backend.env)
-          sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
-          sudo systemctl restart app-backend
+          echo "==> Backend build"
+          cd /opt/app/releases/\$REL/backend
+          npm ci
+          npm run build || { echo "[ERROR] Backend build failed"; exit 1; }
+
+          echo "==> Flip symlink & restart API"
+          sudo ln -sfn /opt/app/releases/\$REL/backend /opt/app/current-backend
+          sudo systemctl restart app-backend || true
           sleep 1
+          sudo systemctl status app-backend --no-pager || true
+          sudo journalctl -u app-backend -n 80 --no-pager || true
 
-          # --- Frontend ---
-          cd /opt/app/releases/$REL/frontend
-          cat > .env.production <<ENV
-          VITE_API_BASE=${VITE_API_BASE}
-          VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
-          VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
-          VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
-          VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
-          VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET}
-          VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
-          VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
-          ENV
+          echo "==> Frontend build"
+          cd /opt/app/releases/\$REL/frontend
+          cat > .env.production <<EOV
+          VITE_API_BASE=${{ env.VITE_API_BASE }}
+          VITE_FIREBASE_API_KEY=${{ env.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN=${{ env.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID=${{ env.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID=${{ env.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET=${{ env.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ env.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID=${{ env.VITE_FIREBASE_MEASUREMENT_ID }}
+          EOV
+          echo "---- .env.production ----"
+          sed 's/=.*/=********/' .env.production
+
           npm ci
-          npm run build
+          npm run build || { echo "[ERROR] Frontend build failed"; exit 1; }
           sudo rsync -av --delete dist/ /var/www/app/
 
-          # Health checks
-          curl -sf https://api.agilehostile.com/api/health >/dev/null
-          curl -sf https://app.agilehostile.com >/dev/null
-          REMOTE
+          echo "==> Health checks"
+          set -x
+          curl -fsS https://api.agilehostile.com/api/health || { echo "[ERROR] API health failed"; exit 1; }
+          curl -fsS https://app.agilehostile.com | head -n1 >/dev/null || { echo "[ERROR] App index failed"; exit 1; }
+          set +x
+
+          echo "==> Done."
+          EOF
