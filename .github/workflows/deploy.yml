@@ -45,7 +45,7 @@ jobs:
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
             frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      - name: Sync secrets to /etc/app and Firebase JSON
+      - name: Sync secrets to /etc/app and Firebase JSON (HARDCODED)
         run: |
           ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
           set -euo pipefail
@@ -66,9 +66,21 @@ jobs:
           ENV
           sudo chmod 640 /etc/app/backend.env
 
-          # Write the raw (multi-line) JSON secret
+          # Write the raw (multi-line) JSON secret (HARDCODED OVERRIDE)
           sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<'JSON'
-          ${{ secrets.FIREBASE_ADMIN_JSON }}
+          {
+            "type": "service_account",
+            "project_id": "mmwave-35747",
+            "private_key_id": "aa8c19ce4218ae8180c2c382b6053235297f0465",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdDRv3+NyvLSxu\nWJG5MRmUUxR0Dg3PxH2ijMarKr+fzzDxgGM+EDY9ZKEXz6Bkkeanj1E/eCsLYkKn\nQwSrbBiABA1G2XswI+Qg85bbL0bZZHjOGEvdWKMtFTOMbl2BLIhTbyhn7i22CApn\nHfDZwHOG/WezvysV7TLBV6+8UKE2GwxmOMSV8/6QSX4L03/jok/+k/d4uk9cG+r5\nrQlrLykg1/50EJf7ru56S+1HJoNTiYgbVpapeaHNhZIK4HFCOA9J92+UBiPMW19d\n5/2VTYQp0quZE0+rXl35VEFbYXW0Xt/jfwrUezLSACDuopQowTZYklohqZe0T5ku\nhbJd7fE/AgMBAAECggEAAnzznqPqH/1QgwweKnPMsj2z0jvs7d9r++4SYmTVyVUK\nBlMyoBqLRxT14eW6tscUTeMwFUMjVjp3PkNj2btwFH4h2XVN4f8qwdrcDNWIZPQG\nOWj5REw2HKYgxr418TlGGOJRwHG5iVNSgqdJ9GQqfg97dlYlhFaqJpZNFRU3QKZM\nmXrda1Nt6toX7VG6uc7nUz7PjJZJGXg1WgwFbQ72cu+t+XXCPUQm3fw8vYXbw8Ka\neFd/4dEQsJc5K3Y1peg8FnrOTKDribhZmW43Eptau0HkN+up+1HXwO495bGWcrVu\nA66aJISKSiOvVmw3Uz6QQ0OGRz6nIqUwtnzlC38CqQKBgQD1ger9F0qmKH3emZhh\nPMxhplPlKC0ie/yalH34RGKH9yJTCV3dOSyZ0kzOWhLFx2fQJQg5GBtH3Trn1frY\nP4rWpps9K2G6kqupJqACbSrkMV+h4A+OOi+UY173snZwJGNxwLRAFD0vfe18BDB3\nDx1Bhorsil1jkbbU95Z2vfNgSwKBgQDmf53daGNGQwFgBqbq/MyDwG5MmFSZ0L7m\nHMEfWkH8AcFiX80X36Pygw7y0czYK6R5DRsKoZUCBohKL49DIqUgGO2RWNVmziSN\nsDsyg31umBpgqebA/CzpPryqCzGJkPMyhZmwVZRgj+Nlmfi8scxiUE9PBA+SMfwg\nhfbqDO4iXQKBgQDhAVD85HvmDPZPLTYa6D3owSfivg+fq0K36aAKCaLEOhubPtpo\nBh56W+NIvAS4fykF+uquaQmXs4ppMBPWXWZBlDByv2+yLvpk7KF5l9PXj+i100Ru\ndaVlui0vlsA1xyPc/WA12la5UBB3uN8yPwfxJf3tDGLK/qEyTjf4W97SQQKBgBxq\nGPzlVG+h7PZ4e3U2asPHIhHBKZS4nf/iBZCm4MF/Oea1pqPNxvkrXNlkMZtobeMa\nUX4TAzp3sa9rg36kM7TsPcUQLWZ5/RmWYwXMHddXWtEVwMODksnCGSHhNV8fBkvx\nGkwZkKwCsOaif35LcMWh3tT/zCeaj9k2ioS5yVVlAoGAXkvXT0GXxLEtxwLj2K8+\nG1lPMIoR2hEYu+3YKvyTfR2DYOKBqZ0iCifo33wp31nVOTxhgtqdTCurFXiM5euC\n7sdgdWycZQwfs8dLf1Nztr926cB5Fpvx+s66V6fAIDQVcAx72r7lyjcAerZJBu2I\n/Z3ZZNLpgc3oH5+Nt29z4u0=\n-----END PRIVATE KEY-----\n",
+            "client_email": "firebase-adminsdk-fbsvc@mmwave-35747.iam.gserviceaccount.com",
+            "client_id": "109253598092964126182",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40mmwave-35747.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+          }
           JSON
           sudo chown ubuntu:ubuntu /opt/app/secrets/firebase-admin.json
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
