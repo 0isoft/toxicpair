@@ -1,68 +1,344 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+/* =========================
+   Base reset + theme tokens
+   ========================= */
+   * { box-sizing: border-box; }
+   html, body, #root { height: 100%; }
+   body {
+     margin: 0;
+     font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+     color: var(--text);
+     background: var(--bg);
+   }
+   
+   :root {
+     --bg: #f6f7f9;
+     --surface: #ffffff;
+     --text: #0b1020;
+     --muted: #6b7280;
+     --ring: rgba(0,0,0,0.06);
+     --border: rgba(0,0,0,0.08);
+     --shadow: 0 1px 2px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+     --brand-600: #2563eb;
+     --brand-700: #1d4ed8;
+     --ok: #059669;
+     --warn: #d97706;
+     --danger: #dc2626;
+     --radius: 16px;
+   }
+   @media (prefers-color-scheme: dark) {
+     :root {
+       --bg: #0b0f19;
+       --surface: rgba(24, 24, 27, 0.9);
+       --text: #e5e7eb;
+       --muted: #9ca3af;
+       --ring: rgba(255,255,255,0.08);
+       --border: rgba(255,255,255,0.12);
+       --shadow: 0 1px 2px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.35);
+     }
+   }
+   
+   /* ==============
+      Card + Layout
+      ============== */
+   .card {
+     background: var(--surface);
+     border-radius: var(--radius);
+     box-shadow: var(--shadow);
+     outline: 1px solid var(--ring);
+     overflow: hidden;
+   }
+   
+   /* Make the pane wrapper sticky (used on LEFT/MIDDLE/RIGHT wrappers) */
+   .sticky {
+     position: sticky;
+     top: 16px;               /* adjust if you have a fixed navbar */
+     align-self: start;       /* prevents stretching in grid row */
+   }
+   
+   /* Column cards act as vertical flex containers, but DO NOT force 100% height */
+   .card-col {
+     display: flex;
+     flex-direction: column;
+     min-height: 0;           /* enables inner scroll areas */
+   }
+   
+   /* Header at the top of any card */
+   .cardHeader, .tablist { flex: 0 0 auto; }
+   
+   /* Sections that should grow (e.g., editor, chat) */
+   .section { min-width: 0; }
+   .section-grow {
+     flex: 1 1 auto;
+     min-height: 0;
+     overflow: hidden;        /* internal scrollers handle scroll */
+     padding-top: 0;
+   }
+   
+   /* Wider container so columns aren't starved */
+.page-wrap {
+    /* roomy but responsive */
+    max-width: min(96vw, 1640px);  /* bump this if you want even wider */
+    margin: 0 auto;
+    padding: 24px 16px;
   }
-  a:hover {
-    color: #747bff;
+  
+  /* --- Desktop-first 3-column grid --- */
+  .grid {
+    display: grid;
+    gap: 24px;
+    align-items: start;
+    grid-template-columns: 2fr 1fr 1fr; /* Equal width for all columns */
+    grid-template-areas: "left mid right";
   }
-  button {
-    background-color: #f9f9f9;
+  /* Make sure grid children can actually shrink */
+  .grid > * { min-width: 0; }
+  
+  /* Pane area mapping (keep your existing classes if already added) */
+  .pane-left  { grid-area: left; }
+  .pane-mid   { grid-area: mid; }
+  .pane-right { grid-area: right; }
+  
+  /* Defensive: prevent right pane content from forcing wide min-content */
+  .chatList, .chatMsg, .leftContent, .section, .section-grow { min-width: 0; }
+  .chatMsg { word-break: break-word; }
+  
+  /* -------------------------
+     Responsive breakpoints
+     ------------------------- */
+  
+  /* Large-desktop refinement: center even bigger when there’s space */
+  @media (min-width: 900px) {
+    .grid {
+      grid-template-columns: 1fr 1fr 1fr; /* Equal width for all columns */
+    }
   }
-}
+  
+  
+  
+  /* Phone: collapse to a single column, disable sticky to avoid jumpiness */
+  @media (max-width: 640px) {
+    .grid {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "left"
+        "mid"
+        "right";
+    }
+    .pane { position: static; }   /* turn off sticky on mobile */
+  }
+  
+  /* CodeMirror clamps so typing never resizes columns */
+  .section-grow > .cm-editor {
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .cm-scroller { overflow-x: auto; overflow-y: auto; height: 100%; }
+  
+   /* ===========================
+      CodeMirror sizing (center)
+      =========================== */
+   .section-grow > .cm-editor {
+     flex: 1 1 auto;
+     min-width: 0;            /* CRITICAL so editor doesn't expand column */
+     width: 100%;
+     height: 100%;
+     overflow: hidden;        /* scrolling lives in .cm-scroller */
+     border: 1px solid var(--ring);
+     border-radius: 12px;
+   }
+   .cm-scroller {
+     overflow-y: auto;
+     overflow-x: auto;        /* long lines scroll horizontally */
+     height: 100%;
+   }
+   
+   /* =================
+      Buttons + Inputs
+      ================= */
+   button, .btn {
+     font: inherit;
+     cursor: pointer;
+     border: 1px solid transparent;
+     border-radius: 999px;
+     padding: 0.5rem 0.9rem;
+     background: #f3f4f6;
+   }
+   button:disabled, .btn:disabled { opacity: .6; cursor: not-allowed; }
+   
+   /* You use className="btn btnPrimary" in JSX, so define it */
+   .btnPrimary, button.btnPrimary {
+     background: var(--brand-600);
+     color: #fff;
+   }
+   .btnPrimary:hover:not(:disabled) { background: var(--brand-700); }
+   
+   .input, textarea.input, textarea, input, select {
+     width: 100%;
+     background: #f9fafb;
+     color: inherit;
+     border: 1px solid var(--ring);
+     border-radius: 12px;
+     padding: .55rem .7rem;
+     outline: none;
+   }
+   .input:focus, textarea:focus, input:focus, select:focus {
+     border-color: var(--brand-600);
+     box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+   }
+   .select { width: auto; }
+   
+   /* =====
+      Tabs
+      ===== */
+   .tablist {
+     display: flex;
+     gap: 0;
+     padding: 0;
+     border-bottom: 1px solid var(--ring);
+     background: transparent;
+   }
+   .tab {
+     appearance: none;
+     background: none;
+     border: none;
+     margin: 0;
+     padding: 10px 12px;
+     font: inherit;
+     font-weight: 600;
+     color: var(--muted);
+     border-bottom: 2px solid transparent;
+     border-radius: 0;
+     cursor: pointer;
+   }
+   .tab:hover { color: var(--text); }
+   .tab[aria-selected="true"] {
+     color: var(--text);
+     border-bottom-color: var(--text);
+   }
+   
+   /* =====
+      Pills
+      ===== */
+   .pill, .pill-easy, .pill-medium, .pill-hard {
+     display: inline-block;
+     padding: .15rem .5rem;
+     border-radius: 999px;
+     font-size: .75rem;
+     font-weight: 600;
+   }
+   .pill { background: #e5e7eb; color: #111827; }
+   .pill-easy   { background: rgba(5,150,105,.15); color: #065f46; }
+   .pill-medium { background: rgba(217,119,6,.18); color: #92400e; }
+   .pill-hard   { background: rgba(220,38,38,.18); color: #7f1d1d; }
+   
+   /* ==========
+      Prose blocks
+      ========== */
+   .prose {
+     line-height: 1.6;
+     color: inherit;
+   }
+   .prose h1, .prose h2, .prose h3 { margin: .75rem 0 .5rem; }
+   .prose pre, pre.prose {
+     background: rgba(17,24,39,.07);
+     border: 1px solid var(--ring);
+     border-radius: 12px;
+     padding: .75rem;
+     overflow: auto;
+     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+     font-size: .9rem;
+   }
+   
+   /* =======
+      Navbar
+      ======= */
+   .navbar {
+     position: sticky;
+     top: 0;
+     z-index: 50;
+     background: var(--surface);
+     border-bottom: 1px solid var(--ring);
+     backdrop-filter: blur(8px);
+   }
+   .navInner {
+     max-width: 1120px;
+     margin: 0 auto;
+     padding: 10px 16px;
+     display: flex; align-items: center; gap: 16px;
+   }
+   .brand { font-weight: 700; font-size: 16px; color: var(--text); text-decoration: none; }
+   .navLinks { display: flex; gap: 8px; }
+   .navlink { padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+   .navlink:hover { background: rgba(0,0,0,0.04); color: var(--text); }
+   .navlink.active { color: var(--text); background: rgba(0,0,0,0.08); }
+   .spacer { flex: 1; }
+   
+   .userMenu { position: relative; }
+   .userButton {
+     display: inline-flex; align-items: center;
+     padding: 2px; border-radius: 999px;
+     border: 1px solid var(--ring); background: #f8fafc;
+   }
+   .avatar {
+     width: 32px; height: 32px; display: grid; place-items: center;
+     border-radius: 999px; font-weight: 700; background: var(--brand-600); color: #fff;
+   }
+   .menuPanel {
+     position: absolute; right: 0; top: calc(100% + 8px);
+     min-width: 220px; background: var(--surface);
+     border: 1px solid var(--ring); border-radius: 12px;
+     box-shadow: var(--shadow); overflow: hidden;
+   }
+   .menuHeader { padding: 10px 12px; border-bottom: 1px solid var(--ring); }
+   .menuName { font-weight: 700; font-size: 14px; }
+   .menuEmail { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-all; }
+   .menuItem {
+     display: block; width: 100%; text-align: left;
+     padding: 10px 12px; background: none; border: none; color: inherit;
+     text-decoration: none; cursor: pointer;
+   }
+   .menuItem:hover { background: rgba(0,0,0,0.04); }
+   .menuItem.danger { color: var(--danger); }
+   
+   /* ===========
+      Page shell
+      =========== */
+   .page-wrap { max-width: 1500px; margin: 0 auto; padding: 24px 16px; }
+   
+   /* ===========
+      Left column
+      =========== */
+   .leftCard { display: flex; flex-direction: column; min-height: 0; }
+   .leftContent {
+     flex: 1 1 auto;
+     min-height: 0;
+     overflow-y: auto;
+     overflow-x: hidden;
+     padding: 16px;
+   }
+   
+   /* ==========================
+      Assistant (right column)
+      ========================== */
+   .chatList {
+     display: flex;
+     flex-direction: column;
+     gap: 8px;
+     height: 100%;
+     overflow: auto;
+     padding-right: 4px;
+   }
+   
+   /* ============
+      Utilities
+      ============ */
+   .muted { color: var(--muted); }
+   
+   /* Optional debug outlines — remove when done */
+   /*
+   .grid > :nth-child(1) { outline: 2px solid #22c55e; }
+   .grid > :nth-child(2) { outline: 2px solid #3b82f6; }
+   .grid > :nth-child(3) { outline: 2px solid #f97316; }
+   */
+   

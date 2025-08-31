@@ -32,3 +32,13 @@ docker-data/
 # Build artifacts
 backend/build/
 frontend/dist/
+# secrets & envs
+.env
+.env.*
+backend/.env
+frontend/.env
+*firebase-admin*.json
+*service-account*.json
+*.pem
+*.key
+*.crt

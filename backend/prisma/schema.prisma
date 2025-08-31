@@ -9,8 +9,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // use pool for app/runtime
+  directUrl = env("DIRECT_URL")     // use direct for migrate/introspect
 }
 
 enum UserRole {
@@ -18,36 +19,143 @@ enum UserRole {
   ADMIN
 }
 
+enum EditorMode {
+  CODE
+  VIBECODE
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ProblemTier {
+  INTERN
+  JUNIOR
+  SENIOR
+}
+
+enum UserTier {
+  INTERN
+  JUNIOR
+  SENIOR
+}
+
+model Problem {
+  id          Int        @id @default(autoincrement())
+  title       String
+  description String
+  difficulty  String
+  examples    Json?
+  tests       Json?
+  attempts    Attempt[]
+  sessions    Session[]
+  testCases   TestCase[]
+
+  // NEW/UPDATED
+  defaultPersonaId String?
+  defaultPersona   Persona?         @relation("DefaultPersona", fields: [defaultPersonaId], references: [id], onDelete: SetNull)
+  personas         ProblemPersona[] // link table
+
+  tier     ProblemTier @default(INTERN) // ← level tag
+  isPublic Boolean     @default(false) // ← intern problems can be public
+
+  timeLimitSeconds Int? // null => untimed
+  editorMode       EditorMode @default(CODE)
+
+  allowSwitcheroo  Boolean @default(false)
+  switcherooPolicy Json?
+
+  @@index([defaultPersonaId])
+  @@index([tier])
+  @@index([isPublic])
+}
+
+model Persona {
+  id              String  @id @default(cuid())
+  key             String  @unique // e.g. "clueless_hr", "god_ceo"
+  name            String // Display name
+  tagline         String? // Short blurb for UI
+  avatarEmoji     String? // Optional (e.g. "🧑‍💼", "🕴️")
+  systemPrompt    String // The core behavior/style
+  model           String  @default("gpt-4o") // Or whatever you use
+  temperature     Float   @default(0.3)
+  topP            Float?
+  maxOutputTokens Int?
+  config          Json? // Arbitrary persona knobs (hint policy, etc.)
+  isGlobal        Boolean @default(true) // Available across problems by default
+  isActive        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  problems           ProblemPersona[]
+  sessions           Session[]
+  defaultForProblems Problem[]        @relation("DefaultPersona")
+}
+
+model ProblemPersona {
+  problemId Int
+  personaId String
+  sortOrder Int     @default(0) // Control display order in picker
+  isDefault Boolean @default(false) // Default persona *for this problem*
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  persona Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@id([problemId, personaId])
+  @@index([problemId, sortOrder])
+}
+
 model User {
-  id           Int       @id @default(autoincrement())
-  email        String    @unique
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  role         UserRole  @default(USER) 
-  attempts     Attempt[]
-  chatMessages ChatMessage[]
+  id                  Int                  @id @default(autoincrement())
+  email               String               @unique
+  passwordHash        String?    // <- nullable for OAuth users
+  createdAt           DateTime             @default(now())
+  role                UserRole             @default(USER)
+  attempts            Attempt[]
+  chatMessages        ChatMessage[]
   sessionParticipants SessionParticipant[]
+  tier                UserTier             @default(INTERN)
+  firebaseUid  String?  @unique
 }
 
 model Session {
-  id           String                @id @default(cuid())
-  problem      Problem?              @relation(fields: [problemId], references: [id])
+  id           String               @id @default(cuid())
+  problem      Problem?             @relation(fields: [problemId], references: [id])
   problemId    Int?
-  status       String                @default("active") // "active" | "ended"
-  createdAt    DateTime              @default(now())
+  status       String               @default("active") // "active" | "ended"
+  createdAt    DateTime             @default(now())
   participants SessionParticipant[]
   messages     ChatMessage[]
+  persona      Persona?             @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  personaId    String?
+
+  // Optional snapshotting for reproducibility (freeze the persona config at session start)
+  personaModel        String?
+  personaTemperature  Float?
+  personaSystemPrompt String?
+  personaConfig       Json?
+  timerEvents         SessionTimerEvent[]
 }
 
-
 model ChatMessage {
-  id        Int      @id @default(autoincrement())
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id        Int     @id @default(autoincrement())
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  text      String
-  sentAt    DateTime @default(now())
+  // nullable so assistant/system messages don't need a user row
+  user      User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int?
+
+  role     ChatRole @default(USER)
+  text     String
+  code     String?
+  language String? // "javascript" | "python" | "cpp"
+  sentAt   DateTime @default(now())
+
+  @@index([sessionId, sentAt])
 }
 
 model SessionParticipant {
@@ -62,59 +170,62 @@ model SessionParticipant {
   @@unique([sessionId, userId])
 }
 
-model Problem {
-  id          Int       @id @default(autoincrement())
-  title       String
-  description String
-  difficulty  String
-  examples    Json?
-  tests       Json?
-  attempts    Attempt[]
-  //back relations
-  sessions    Session[]
-  testCases   TestCase[]
-}
-
 enum AttemptStatus {
-  SUBMITTED   // accepted by API, not judged yet
+  SUBMITTED // accepted by API, not judged yet
   RUNNING //this will be for redis
-  PASSED      // all tests passed
-  FAILED      // at least one test failed
-  ERROR       // runtime/compile/system error
+  PASSED // all tests passed
+  FAILED // at least one test failed
+  ERROR // runtime/compile/system error
 }
-
 
 model Attempt {
-  id          Int           @id @default(autoincrement())
-  user        User          @relation(fields: [userId], references: [id])
-  userId      Int
-  problem     Problem       @relation(fields: [problemId], references: [id])
-  problemId   Int
+  id        Int     @id @default(autoincrement())
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  problem   Problem @relation(fields: [problemId], references: [id])
+  problemId Int
 
-  startedAt   DateTime?   // this for the redis worker/attempted queue
-  finishedAt  DateTime?   //
+  startedAt  DateTime? // this for the redis worker/attempted queue
+  finishedAt DateTime? //
 
-  code        String
-  language    String        @default("typescript")
-  status      AttemptStatus @default(SUBMITTED)
-  passedCount Int           @default(0)
-  totalCount  Int           @default(0)
-  runtimeMs   Int?          // optional perf metric
-  submittedAt DateTime      @default(now())
+  code         String
+  language     String        @default("typescript")
+  status       AttemptStatus @default(SUBMITTED)
+  passedCount  Int           @default(0)
+  totalCount   Int           @default(0)
+  runtimeMs    Int? // optional perf metric
+  submittedAt  DateTime      @default(now())
   errorMessage String?
   logs         String?
+
+  deadlineAt DateTime?
+  timedOut   Boolean   @default(false)
+
   @@index([userId, problemId, status])
   @@index([problemId, status])
 }
 
+model SessionTimerEvent {
+  id           Int      @id @default(autoincrement())
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId    String
+  executeAt    DateTime // when the drop should kick in
+  deltaSeconds Int // negative to shorten
+  message      String? // “oops, the PM…”
+  applied      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([sessionId, applied, executeAt])
+}
+
 model TestCase {
-  id        Int      @id @default(autoincrement())
-  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  id        Int     @id @default(autoincrement())
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
   problemId Int
-  input     Json     // e.g., [1,2] for args
-  expected  Json     // expected output
-  hidden    Boolean  @default(true)
-  ordinal   Int      @default(0)
+  input     Json // e.g., [1,2] for args
+  expected  Json // expected output
+  hidden    Boolean @default(true)
+  ordinal   Int     @default(0)
 
   @@index([problemId, hidden, ordinal])
 }

@@ -6,16 +6,22 @@ import ProblemDetail from "./pages/ProblemDetail";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Profile from "./pages/Profile";
+import Legal from "./pages/Legal";
+import AdminKPIs from "./pages/adminKPIs";
 
 
 function Shell() {
   return (
-    <div className="min-h-screen bg-white">
+    <div>
       <Header />
-      <Outlet />
+      <div className="page-wrap">
+        <Outlet />
+      </div>
     </div>
   );
 }
+
+
 
 export default function App() {
   return (
@@ -27,6 +33,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="legal" element={<Legal />} />
+        <Route path="admin" element={<AdminKPIs />} />
       </Route>
     </Routes>
   );
