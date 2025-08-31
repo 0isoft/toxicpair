@@ -70,6 +70,7 @@ jobs:
           sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<'JSON'
           ${{ secrets.FIREBASE_ADMIN_JSON }}
           JSON
+          sudo chown ubuntu:ubuntu /opt/app/secrets/firebase-admin.json
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
           EOF
 
