@@ -1,106 +1,96 @@
-name: Deploy to Lightsail
+name: Deploy to Production
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: {}
-
-env:
-  REL: release-${{ github.run_number }}-${{ github.sha }}
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REL: release-${{ github.run_id }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host key
+        run: ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
       - name: Create release dirs on server
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
             set -e
-            mkdir -p /opt/app/releases/${REL}/{backend,frontend}
+            sudo mkdir -p /opt/app/releases && sudo chown ubuntu:ubuntu /opt/app/releases
+            mkdir -p /opt/app/releases/${{ env.REL }}/backend
+            mkdir -p /opt/app/releases/${{ env.REL }}/frontend
 
-      - name: Upload backend sources
-        uses: appleboy/scp-action@v0.1.7
+      - name: Upload backend via rsync (with excludes)
+        uses: appleboy/rsync-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "backend/*"
-          target: "/opt/app/releases/${{ env.REL }}/backend"
-          strip_components: 1
-          rm: true
-          overwrite: true
-          exclude: >
-            backend/node_modules/**,
-            backend/dist/**,
-            backend/.git/**,
-            backend/.env*,
-            backend/*firebase*.json,
-            backend/cookies.txt
+          source: "backend/"
+          target: "/opt/app/releases/${{ env.REL }}/backend/"
+          args: "-avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist' --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt'"
 
-      - name: Upload frontend sources
-        uses: appleboy/scp-action@v0.1.7
+      - name: Upload frontend via rsync (with excludes)
+        uses: appleboy/rsync-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "frontend/*"
-          target: "/opt/app/releases/${{ env.REL }}/frontend"
-          strip_components: 1
-          rm: true
-          overwrite: true
-          exclude: >
-            frontend/node_modules/**,
-            frontend/dist/**,
-            frontend/.git/**,
-            frontend/.env*
+          source: "frontend/"
+          target: "/opt/app/releases/${{ env.REL }}/frontend/"
+          args: "-avz --delete --exclude '.git' --exclude 'node_modules' --exclude 'dist'"
 
-      - name: Build & switch on the server (no public canary)
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Build & switch on server
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          # pass Firebase web config to bake into the frontend build
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 30m
           script: |
-            set -euo pipefail
+            set -e
             REL="${{ env.REL }}"
-            echo "Deploying $REL"
 
-            # --- Backend build ---
+            # Backend build
             cd /opt/app/releases/$REL/backend
             npm ci
             npm run build
 
-            # quick local smoke on :3001 (not public, just to catch obvious breakage)
-            set -a
-            . /etc/app/backend.env
-            set +a
-            PORT=3001 nohup node dist/server.js >/tmp/app-smoke.log 2>&1 &
-            PID=$!
+            # Flip symlink & restart API (service already reads /etc/app/backend.env)
+            sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
+            sudo systemctl restart app-backend
             sleep 1
-            curl -sf http://127.0.0.1:3001/api/health >/dev/null || { echo "backend smoke failed"; kill $PID; exit 1; }
-            kill $PID
 
-            # --- Frontend build (bake prod env) ---
+            # Frontend build (inject prod env)
             cd /opt/app/releases/$REL/frontend
             cat > .env.production <<'ENV'
-            VITE_API_BASE=https://api.agilehostile.com/api
+            VITE_API_BASE=${VITE_API_BASE}
             VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
             VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
             VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
@@ -111,28 +101,11 @@ jobs:
             ENV
             npm ci
             npm run build
+            sudo rsync -av --delete dist/ /var/www/app/
 
-            # --- Flip to new release (atomic-ish) ---
-            # remember previous for rollback
-            PREV=$(basename "$(dirname "$(readlink -f /opt/app/current-backend)")" || echo "")
-            echo "Previous release: $PREV"
+            # Health checks
+            curl -sf https://api.agilehostile.com/api/health >/dev/null
+            curl -sf https://app.agilehostile.com >/dev/null
 
-            sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
-            sudo systemctl restart app-backend
-
-            sudo rsync -av --delete /opt/app/releases/$REL/frontend/dist/ /var/www/app/
-            sudo nginx -t && sudo systemctl reload nginx
-
-            # final external health
-            curl -sf https://api.agilehostile.com/api/health >/dev/null || {
-              echo "final health check failed; rolling back"
-              if [ -n "$PREV" ]; then
-                sudo ln -sfn /opt/app/releases/$PREV/backend /opt/app/current-backend
-                sudo systemctl restart app-backend
-                sudo rsync -av --delete /opt/app/releases/$PREV/frontend/dist/ /var/www/app/
-                sudo nginx -t && sudo systemctl reload nginx
-              fi
-              exit 1
-            }
-
-            echo "Deploy OK: $REL"
+      - name: Done
+        run: echo "Deployed $REL"
