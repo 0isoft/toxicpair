@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -36,6 +36,7 @@ jobs:
         run: |
           rsync -avz --delete \
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
+            --exclude '.env*' --exclude '*firebase*.json' --exclude 'cookies.txt' \
             backend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/backend/
 
       - name: Upload frontend (rsync)
@@ -44,39 +45,36 @@ jobs:
             --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
             frontend/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/app/releases/${REL}/frontend/
 
-      # >>> This is the critical part: write secrets to the server BEFORE any restart
       - name: Sync secrets to /etc/app and Firebase JSON
         run: |
           ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
           set -euo pipefail
           sudo mkdir -p /etc/app /opt/app/secrets
-          # Overwrite backend.env fully every deploy (single source of truth)
+
+          # Overwrite backend.env each deploy
           sudo tee /etc/app/backend.env >/dev/null <<ENV
           NODE_ENV=production
           PORT=3000
           CORS_ORIGINS=https://app.agilehostile.com
           PUBLIC_API_BASE=https://api.agilehostile.com
-
-          # Required secrets
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           DATABASE_URL=${{ secrets.DATABASE_URL }}
           DIRECT_URL=${{ secrets.DIRECT_URL }}
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
-
-          # Firebase admin file path
           GOOGLE_APPLICATION_CREDENTIALS=/opt/app/secrets/firebase-admin.json
           ENV
           sudo chmod 640 /etc/app/backend.env
 
-          # Write Firebase admin json from base64
-          echo "${{ secrets.FIREBASE_ADMIN_JSON_B64 }}" | base64 -d | sudo tee /opt/app/secrets/firebase-admin.json >/dev/null
+          # Write the raw (multi-line) JSON secret
+          sudo tee /opt/app/secrets/firebase-admin.json >/dev/null <<JSON
+${{ secrets.FIREBASE_ADMIN_JSON }}
+JSON
           sudo chmod 600 /opt/app/secrets/firebase-admin.json
           EOF
 
       - name: Build, canary, flip, then frontend
         env:
-          # Frontend public env
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -86,23 +84,23 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
         run: |
-          ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<'EOF'
+          ssh -o StrictHostKeyChecking=yes ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'bash -se' <<EOF
           set -euo pipefail
-          REL="${REL}"
+          REL="${{ env.REL }}"
 
-          echo "==> Preflight: env completeness"
+          echo "==> Preflight env"
           REQUIRED=(JWT_SECRET DATABASE_URL DIRECT_URL CORS_ORIGINS PUBLIC_API_BASE GOOGLE_APPLICATION_CREDENTIALS OPENAI_API_KEY)
           MISS=()
-          for k in "${REQUIRED[@]}"; do
-            v=$(sudo awk -F= -v k="$k" '$1==k{print $2}' /etc/app/backend.env | tr -d "\r")
-            [ -z "$v" ] && MISS+=("$k")
+          for k in "\${REQUIRED[@]}"; do
+            v=\$(sudo awk -F= -v k="\$k" '\$1==k{print \$2}' /etc/app/backend.env | tr -d "\r")
+            [ -z "\$v" ] && MISS+=("\$k")
           done
-          P=$(sudo awk -F= '$1=="GOOGLE_APPLICATION_CREDENTIALS"{print $2}' /etc/app/backend.env | tr -d "\r")
-          if [ -z "$P" ] || ! sudo test -s "$P"; then MISS+=("GOOGLE_APPLICATION_CREDENTIALS(path)") ; fi
-          if [ ${#MISS[@]} -gt 0 ]; then echo "[ERROR] Missing: ${MISS[*]}"; exit 1; fi
+          P=\$(sudo awk -F= '\$1=="GOOGLE_APPLICATION_CREDENTIALS"{print \$2}' /etc/app/backend.env | tr -d "\r")
+          if [ -z "\$P" ] || ! sudo test -s "\$P"; then MISS+=("GOOGLE_APPLICATION_CREDENTIALS(path)"); fi
+          if [ \${#MISS[@]} -gt 0 ]; then echo "[ERROR] Missing: \${MISS[*]}"; exit 1; fi
 
           echo "==> Backend build"
-          cd /opt/app/releases/$REL/backend
+          cd /opt/app/releases/\$REL/backend
           npm ci
           npm run build
 
@@ -111,22 +109,22 @@ jobs:
           . /etc/app/backend.env
           set +a
           PORT=3001 nohup node dist/server.js >/tmp/app-canary.log 2>&1 &
-          CANARY_PID=$!
+          CANARY_PID=\$!
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:3001/api/health >/dev/null; then echo "Canary healthy"; break; fi
             sleep 0.5
-            [ $i -eq 30 ] && { echo "[ERROR] Canary failed"; tail -n 200 /tmp/app-canary.log || true; kill $CANARY_PID || true; exit 1; }
+            [ \$i -eq 30 ] && { echo "[ERROR] Canary failed"; tail -n 200 /tmp/app-canary.log || true; kill \$CANARY_PID || true; exit 1; }
           done
-          kill $CANARY_PID || true
+          kill \$CANARY_PID || true
 
           echo "==> Flip symlink & restart"
-          sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
+          sudo ln -sfn /opt/app/releases/\$REL/backend /opt/app/current-backend
           sudo systemctl restart app-backend
           sleep 1
           curl -fsS http://127.0.0.1:3000/api/health >/dev/null || { echo "[ERROR] API not healthy"; journalctl -u app-backend -n 120 --no-pager || true; exit 1; }
 
           echo "==> Frontend build & publish"
-          cd /opt/app/releases/$REL/frontend
+          cd /opt/app/releases/\$REL/frontend
           cat > .env.production <<EOV
           VITE_API_BASE=${{ env.VITE_API_BASE }}
           VITE_FIREBASE_API_KEY=${{ env.VITE_FIREBASE_API_KEY }}
