@@ -202,9 +202,7 @@ export default function Splash() {
             {/* NAV */}
             <header className="ah-nav">
                 <div className="ah-nav-brand">
-                    <span className="ah-logo">Aɢɪʟᴇ Hᴏsᴛɪʟᴇ</span>
-                    <span className="ah-badge"> grind Leetcode and get gaslit by AIs</span>
-                </div>
+                    <span className="ah-logo">Aɢɪʟᴇ Hᴏsᴛɪʟᴇ</span>                </div>
                 <nav className="ah-nav-links">
                     <Link className="ah-link" to="/problems">Browse Problems</Link>
                     {isAuthed ? (
