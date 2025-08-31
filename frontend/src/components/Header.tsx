@@ -1,40 +1,118 @@
-import { Link, NavLink } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth";
 import { useApi } from "../lib/api";
 import type { User } from "../lib/types";
+import { useLocation } from "react-router-dom";
 
 export default function Header() {
   const { token, logout } = useAuth();
   const api = useApi();
+  const qc = useQueryClient();
+
+  const { pathname } = useLocation();
+  // + hide the header on the landing route
+  if (pathname === "/") return null;
 
   const { data: me } = useQuery({
-    queryKey: ["me", token],
+    queryKey: ["me"],                 // stable key
     queryFn: () => api<User>("/me"),
-    enabled: !!token, // only fetch when logged in
+    enabled: !!token,                 // fetch only when we have a token
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
   });
+  
+  const isAuthed = !!token;
+  const navigate = useNavigate();
+
+  const displayName = me?.email?.split("@")[0] || me?.email || "Account";
+  const email = me?.email || "";
+  const initial = (displayName || "U").slice(0, 1).toUpperCase();
+
+  const handleLogout = async () => {
+    setOpen(false);
+    await logout();
+    navigate("/", { replace: true });
+  };
+
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   return (
-    <header className="border-b bg-white">
-      <div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
-        <Link to="/" className="font-semibold">ToxicPair</Link>
-        <nav className="flex items-center gap-4 text-sm">
-          <NavLink to="/problems" className="hover:underline">Problems</NavLink>
-          {!token && (
+    <header className="navbar">
+      <div className="navInner">
+        <Link to="/" className="brand">Agile Hostile</Link>
+
+        <nav className="navLinks" aria-label="Primary">
+          <NavLink to="/" end className={({isActive}) => "navlink" + (isActive ? " active" : "")}>
+            Home
+          </NavLink>
+          <NavLink to="/problems" className={({isActive}) => "navlink" + (isActive ? " active" : "")}>
+            Problems
+          </NavLink>
+        </nav>
+
+        <div className="spacer" />
+
+        <div className="userMenu" ref={boxRef}>
+          {isAuthed ? (
             <>
-              <NavLink to="/login" className="hover:underline">Log in</NavLink>
-              <NavLink to="/register" className="hover:underline">Register</NavLink>
+              <button
+                className="userButton"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen(v => !v)}
+              >
+                <span className="avatar">{initial}</span>
+              </button>
+              {open && (
+                <div className="menuPanel" role="menu">
+                  <div className="menuHeader">
+                    <div className="menuName">{displayName}</div>
+                    {email && <div className="menuEmail">{email}</div>}
+                  </div>
+                  <NavLink
+                    to="/profile"
+                    className="menuItem"
+                    role="menuitem"
+                    onClick={() => setOpen(false)}
+                  >
+                    Profile
+                  </NavLink>
+                  <button
+                    className="menuItem danger"
+                    role="menuitem"
+                    onClick={handleLogout}
+                  >
+                    Log out
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <NavLink to="/login" className="navlink">Log in</NavLink>
+              <NavLink to="/register" className="navlink">Register</NavLink>
             </>
           )}
-          {token && (
-            <div className="flex items-center gap-2">
-              <span className="text-gray-600">{me?.email ?? "…"}</span>
-              <button onClick={logout} className="px-2 py-1 border rounded">Logout</button>
-            </div>
-          )}
-          {token && <NavLink to="/profile" className="text-sm hover:underline">Profile</NavLink>}
-
-        </nav>
+        </div>
       </div>
     </header>
   );

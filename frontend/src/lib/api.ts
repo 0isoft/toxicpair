@@ -1,6 +1,7 @@
 import { useAuth } from "./auth";
 
-const API = import.meta.env.VITE_API_BASE as string;
+const API = (import.meta.env.VITE_API_BASE || 'http://localhost:3000').replace(/\/$/, '');
+
 
 export function useApi() {
   const { token, refresh } = useAuth();

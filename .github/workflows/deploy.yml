@@ -1,0 +1,138 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+env:
+  REL: release-${{ github.run_number }}-${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release dirs on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            mkdir -p /opt/app/releases/${REL}/{backend,frontend}
+
+      - name: Upload backend sources
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "backend/*"
+          target: "/opt/app/releases/${{ env.REL }}/backend"
+          strip_components: 1
+          rm: true
+          overwrite: true
+          exclude: >
+            backend/node_modules/**,
+            backend/dist/**,
+            backend/.git/**,
+            backend/.env*,
+            backend/*firebase*.json,
+            backend/cookies.txt
+
+      - name: Upload frontend sources
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "frontend/*"
+          target: "/opt/app/releases/${{ env.REL }}/frontend"
+          strip_components: 1
+          rm: true
+          overwrite: true
+          exclude: >
+            frontend/node_modules/**,
+            frontend/dist/**,
+            frontend/.git/**,
+            frontend/.env*
+
+      - name: Build & switch on the server (no public canary)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          # pass Firebase web config to bake into the frontend build
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            REL="${{ env.REL }}"
+            echo "Deploying $REL"
+
+            # --- Backend build ---
+            cd /opt/app/releases/$REL/backend
+            npm ci
+            npm run build
+
+            # quick local smoke on :3001 (not public, just to catch obvious breakage)
+            set -a
+            . /etc/app/backend.env
+            set +a
+            PORT=3001 nohup node dist/server.js >/tmp/app-smoke.log 2>&1 &
+            PID=$!
+            sleep 1
+            curl -sf http://127.0.0.1:3001/api/health >/dev/null || { echo "backend smoke failed"; kill $PID; exit 1; }
+            kill $PID
+
+            # --- Frontend build (bake prod env) ---
+            cd /opt/app/releases/$REL/frontend
+            cat > .env.production <<'ENV'
+            VITE_API_BASE=https://api.agilehostile.com/api
+            VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
+            VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
+            VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
+            VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
+            VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
+            VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
+            ENV
+            npm ci
+            npm run build
+
+            # --- Flip to new release (atomic-ish) ---
+            # remember previous for rollback
+            PREV=$(basename "$(dirname "$(readlink -f /opt/app/current-backend)")" || echo "")
+            echo "Previous release: $PREV"
+
+            sudo ln -sfn /opt/app/releases/$REL/backend /opt/app/current-backend
+            sudo systemctl restart app-backend
+
+            sudo rsync -av --delete /opt/app/releases/$REL/frontend/dist/ /var/www/app/
+            sudo nginx -t && sudo systemctl reload nginx
+
+            # final external health
+            curl -sf https://api.agilehostile.com/api/health >/dev/null || {
+              echo "final health check failed; rolling back"
+              if [ -n "$PREV" ]; then
+                sudo ln -sfn /opt/app/releases/$PREV/backend /opt/app/current-backend
+                sudo systemctl restart app-backend
+                sudo rsync -av --delete /opt/app/releases/$PREV/frontend/dist/ /var/www/app/
+                sudo nginx -t && sudo systemctl reload nginx
+              fi
+              exit 1
+            }
+
+            echo "Deploy OK: $REL"

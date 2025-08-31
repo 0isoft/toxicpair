@@ -6,10 +6,13 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "prisma:migrate": "prisma migrate dev",
+    "migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:seed": "node prisma/seed.js",
+    "seed": "prisma db seed",
     "dev": "nodemon --watch src --exec ts-node src/server.ts",
     "build": "tsc -p .",
+    "worker": "node dist/worker/index.js",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "dev:worker": "nodemon --watch src --ext ts --exec ts-node src/worker/index.ts"
@@ -27,13 +30,16 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "firebase": "^12.2.1",
+    "firebase-admin": "^13.5.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
+    "openai": "^5.15.0",
     "prisma": "^6.14.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "zod": "^4.0.17"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
