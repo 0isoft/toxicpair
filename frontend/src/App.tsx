@@ -9,7 +9,6 @@ import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 import Legal from "./pages/Legal";
 import AdminKPIs from "./pages/adminKPIs";
-import {useAuth} from "./lib/auth"
 
 function Shell() {
   return (
@@ -23,23 +22,18 @@ function Shell() {
 }
 
 export default function App() {
-  const { booted } = useAuth();
-  if (!booted) {
-    // optional spinner/skeleton; returning null is fine too
-    return null;
-  }
   return (
-      <Routes>
-        <Route element={<Shell />}>
-          <Route path="/" element={<Splash />} />
-          <Route path="/problems" element={<ProblemsList />} />
-          <Route path="/problems/:id" element={<ProblemDetail />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="legal" element={<Legal />} />
-          <Route path="admin" element={<AdminKPIs />} />
-        </Route>
-      </Routes>
+    <Routes>
+      <Route element={<Shell />}>
+        <Route path="/" element={<Splash />} />
+        <Route path="/problems" element={<ProblemsList />} />
+        <Route path="/problems/:id" element={<ProblemDetail />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="legal" element={<Legal />} />
+        <Route path="admin" element={<AdminKPIs />} />
+      </Route>
+    </Routes>
   );
 }
