@@ -292,7 +292,7 @@ export default function Splash() {
                     <div className="how-card">
                         <div className="how-emoji">🎟</div>
                         <div className="how-head">Pick absurd tickets</div>
-                        <div className="how-text">Leetcode-style problems with corporate lore. Intern to Senior. Vibe checks optional.</div>
+                        <div className="how-text">Leetcode-style problems with corporate lore. Intern to Senior.</div>
                     </div>
                     <div className="how-card">
                         <div className="how-emoji">🤖</div>
@@ -449,11 +449,16 @@ a:hover { text-decoration: underline; }
 .panel-sub { font-size: 12px; color: var(--muted); }
 
 /* Chat (fixed size) */
-.panel.chat { grid-column: span 1; }
+.panel.chat { 
+  grid-column: span 1; 
+  display: flex;              /* let children size naturally */
+  flex-direction: column; 
+}
 .chat-box {
   display:flex; flex-direction:column; gap: 8px;
-  height: 240px; /* fixed height to avoid bounce on reset */
-  overflow: hidden; /* keep it calm; no scrollbar jitter */
+  height: 260px;              /* fixed height on desktop */
+  min-height: 220px;          /* guard against accidental collapse */
+  overflow: hidden;           /* no jitter on desktop */
 }
 .bubble { max-width: 100%; width: fit-content; padding: 8px 10px; border-radius: 12px; font-size: 14px; line-height: 1.35; word-break: break-word; }
 .bubble.you { background: #1d203f; border: 1px solid #2a2d58; }
@@ -565,5 +570,13 @@ a:hover { text-decoration: underline; }
 @media (max-width: 560px) {
   .ah-title-main { font-size: 30px; }
   .persona-grid { grid-template-columns: 1fr; }
+
+  .chat-box {
+    height: auto;                         /* let it expand */
+    min-height: clamp(240px, 48vh, 400px);/* but never too tiny */
+    max-height: 60vh;                     /* don’t eat the whole page */
+    overflow: auto;                       /* allow scrolling for long lines */
+    -webkit-overflow-scrolling: touch;    /* smooth scroll on iOS */
+  }
 }
 `;
