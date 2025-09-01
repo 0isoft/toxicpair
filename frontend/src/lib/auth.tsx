@@ -9,6 +9,7 @@ type AuthCtx = {
   refresh: () => Promise<string | null>;
   logout: () => Promise<void>;
   loginWithFirebaseIdToken: (idToken: string) => Promise<void>;
+  booted: boolean;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -20,6 +21,8 @@ const SUPPRESS_REFRESH_KEY = "ah_suppress_refresh";
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const [token, setToken] = useState<string | null>(null);
+  const [booted, setBooted] = useState(false);          // ✅ new
+  const prevToken = React.useRef<string | null>(null); 
 
   async function login(email: string, password: string) {
     const res = await fetch(`${API}/auth/login`, {
@@ -80,10 +83,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  useEffect(() => { refresh().catch(() => void 0); }, []);
+    // ✅ One-time boot: wait for refresh attempt before the app fires queries
+  useEffect(() => {
+    (async () => {
+      try {
+        await refresh();
+      } finally {
+        setBooted(true);
+      }
+    })();
+  }, []);
+
+  // ✅ When token appears for the first time, retry anything that failed early
+  useEffect(() => {
+    if (token && !prevToken.current) {
+      qc.invalidateQueries();           // mark stale
+      qc.refetchQueries({ type: "active" }); // refetch visible queries
+    }
+    prevToken.current = token;
+  }, [token, qc]);
 
   return (
-    <Ctx.Provider value={{ token, setToken, login, register, refresh, logout, loginWithFirebaseIdToken }}>
+    <Ctx.Provider value={{ token, setToken, login, register, refresh, logout, loginWithFirebaseIdToken, booted }}>
       {children}
     </Ctx.Provider>
   );

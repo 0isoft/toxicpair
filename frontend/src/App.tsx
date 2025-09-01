@@ -9,7 +9,7 @@ import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 import Legal from "./pages/Legal";
 import AdminKPIs from "./pages/adminKPIs";
-import ChunkReloadBoundary from "./ChunkReloadBoundary"; // ✅
+import {useAuth} from "./lib/auth"
 
 function Shell() {
   return (
@@ -23,8 +23,12 @@ function Shell() {
 }
 
 export default function App() {
+  const { booted } = useAuth();
+  if (!booted) {
+    // optional spinner/skeleton; returning null is fine too
+    return null;
+  }
   return (
-    <ChunkReloadBoundary>   {/* ✅ one-time auto-reload on stale chunk */}
       <Routes>
         <Route element={<Shell />}>
           <Route path="/" element={<Splash />} />
@@ -37,6 +41,5 @@ export default function App() {
           <Route path="admin" element={<AdminKPIs />} />
         </Route>
       </Routes>
-    </ChunkReloadBoundary>
   );
 }

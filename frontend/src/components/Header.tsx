@@ -78,19 +78,43 @@ export default function Header() {
 
 /* Mobile: stack into three rows: brand, primary links, auth */
 @media (max-width: 560px) {
-  .navInner { flex-wrap:wrap; gap:8px; }
+  /* Switch to grid just on small screens */
+  .navInner {
+    display: grid;
+    grid-template-columns: 1fr auto;       /* links | user menu */
+    grid-template-areas:
+      "brand brand"
+      "nav   user";
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;                     /* slightly tighter */
+  }
 
-  /* Row 1: brand centered full-width */
-  .brand { flex:1 0 100%; text-align:center; }
+  /* Row 1: brand centered across full width */
+  .brand {
+    grid-area: brand;
+    text-align: center;
+    flex: unset;                            /* override flex defaults */
+  }
 
-  /* Row 2: primary nav centered full-width */
-  .navLinks { order:2; flex:1 0 100%; justify-content:center; }
+  /* Row 2: links (centered) + user menu (right) */
+  .navLinks {
+    grid-area: nav;
+    justify-content: center;
+    flex: unset;
+  }
 
-  /* Row 3: auth (or avatar) centered full-width */
-  .userMenu { order:3; flex:1 0 100%; justify-content:center; }
+  .userMenu {
+    grid-area: user;
+    justify-content: end;
+    flex: unset;
+  }
 
-  /* Slightly tighter buttons on mobile */
-  .navlink { padding:6px 10px; font-size:14px; }
+  /* Spacer not needed on mobile */
+  .spacer { display: none; }
+
+  /* Compact pills */
+  .navlink { padding: 6px 10px; font-size: 14px; }
 }
 `;
 
