@@ -80,6 +80,8 @@
     max-width: min(96vw, 1640px);  /* bump this if you want even wider */
     margin: 0 auto;
     padding: 24px 16px;
+    position: relative; 
+    z-index: 1; 
   }
   
   /* --- Desktop-first 3-column grid --- */

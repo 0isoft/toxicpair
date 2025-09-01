@@ -401,6 +401,8 @@ a:hover { text-decoration: underline; }
     radial-gradient(1200px 500px at 80% -10%, rgba(255,255,255,.25), transparent 40%),
     linear-gradient(90deg, var(--accentA), var(--accentB));
   opacity:.9;
+  pointer-events: none;
+  z-index:0;
 }
 .ah-hero-inner { position: relative; padding: 32px 26px 26px; }
 .ah-title { margin: 0; }

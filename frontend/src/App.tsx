@@ -1,5 +1,5 @@
 // App.tsx
-import { Routes, Route, Outlet } from "react-router-dom";
+import { Routes, Route, Outlet, useLocation } from "react-router-dom";
 import Header from "./components/Header";
 import Splash from "./pages/Splash";
 import ProblemsList from "./pages/ProblemsList";
@@ -11,11 +11,12 @@ import Legal from "./pages/Legal";
 import AdminKPIs from "./pages/adminKPIs";
 
 function Shell() {
+  const { pathname } = useLocation();            // 👈
   return (
     <div>
       <Header />
       <div className="page-wrap">
-        <Outlet />
+        <Outlet key={pathname} />                 {/* 👈 force remount per route */}
       </div>
     </div>
   );
