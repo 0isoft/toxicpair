@@ -665,6 +665,24 @@ export default function ProblemDetail() {
   .list li:first-child { border-top: 0; }
   .prose { line-height: 1.65; }
   .prose pre { background: #0b0b0b; color: #f5f5f5; padding: 12px; border-radius: 10px; overflow: auto; }
+
+  @media (max-width: 868px) {
+    .grid {
+      grid-template-columns: 1fr;     /* single column */
+    }
+  
+    /* Anything that tried to span columns (e.g., the gate) becomes normal */
+    .grid > * {
+      grid-column: auto !important;
+    }
+  
+    /* Let sticky panels behave normally on small screens */
+    .sticky {
+      position: static;
+      height: auto;
+      overflow: visible;
+    }
+  }
 `}</style>  
             {note && (
   <div
