@@ -34,7 +34,7 @@ Nginx → Express → Prisma → PostgreSQL
 
 ## Core Components
 ### System architecture
-
+```mermaid
 flowchart LR
   subgraph Client["Client (React + TypeScript)"]
     UI[App UI<br/>Vite build]
@@ -90,9 +90,10 @@ flowchart LR
   Worker -.-> Secrets
   UI <-->|polling/SSE| API
 
-
+```
 
 ### Request Sequence: AI persona gating
+```mermaid
 sequenceDiagram
   autonumber
   participant FE as Frontend
@@ -123,8 +124,7 @@ sequenceDiagram
   API->>DB: save assistant message
   API-->>N: 200 {codeMode, code, message}
   N-->>FE: JSON response
-
-
+```
 #### Persona Escalation Logic
 Input	   | Description
 Assistant turns | 	Number of AI replies so far
@@ -141,7 +141,7 @@ else if (turns >= fullAfterTurns && pressure >= fullAfterPressure) mode = "full"
 ```
 
 Prompt Composition Pipeline:
-
+```mermaid
 flowchart TB
   subgraph Compose["Prompt Composition"]
     Sys[Authoritative System Block<br/>STRICT JSON contract<br/>CODE_MODE setting]
@@ -159,9 +159,10 @@ flowchart TB
   Post --> Enforce[enforce code empty if mode=none]
   Post --> StrictJSON[Strict JSON parse]
   StrictJSON --> Persist[Persist assistant message + code]
-
+```
 
 ## Sandboxed code execution
+```mermaid
 sequenceDiagram
   autonumber
   participant FE as Frontend
@@ -197,7 +198,7 @@ sequenceDiagram
   W->>DB: update attempt status + logs
   FE->>API: GET /api/attempts/:id (polling)
   API-->>FE: attempt status + logs
-
+```
 ### Worker-based Isolated Runners
 
 - Node.js VM for JavaScript (timeout: 1s)
@@ -222,6 +223,7 @@ NoNewPrivileges, read-only filesystem, CPU/RAM cgroups.
 
 
 ## Session lifecycle
+```mermaid
 stateDiagram-v2
   [*] --> Idle
 
@@ -248,8 +250,10 @@ stateDiagram-v2
 
   Expired --> [*]
   Completed --> [*]
+```
 
 ## Authentication flow (jwt, oauth)
+```mermaid
 sequenceDiagram
   autonumber
   participant FE as Frontend
@@ -283,7 +287,7 @@ sequenceDiagram
   API->>DB: verify refresh token
   API-->>FE: 200 {accessToken}<br/>+ rotated refresh cookie
   end
-
+```
 ## Persona system
 Each AI coworker has:
 
