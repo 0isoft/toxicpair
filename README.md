@@ -15,13 +15,18 @@ You talk to a rotating cast of **AI coworkers**; each with their own neuroses, e
 ##  Technical Architecture
 
 ### Stack Overview
-Frontend → Vite + React + TypeScript
-Backend → Express + Prisma + PostgreSQL
-Auth → Firebase JWT
-Infra → Nginx + systemd + AWS Lightsail
 
-**Layered Architecture**
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | Vite + React + TypeScript |
+| **Backend** | Express + Prisma + PostgreSQL |
+| **Auth** | Firebase JWT |
+| **Infrastructure** | Nginx + systemd + AWS Lightsail |
+
+**Request Flow:**
+```
 Nginx → Express → Prisma → PostgreSQL
+```
 
 **Key Features**
 - Stateless REST API with Firebase JWT authentication  
@@ -126,11 +131,14 @@ sequenceDiagram
   N-->>FE: JSON response
 ```
 #### Persona Escalation Logic
-Input	   | Description
-Assistant turns | 	Number of AI replies so far
-User pressure	 | Count of “write code / implement” prompts
-Persona policy	| Config thresholds for unlocking code
-Defense score	| (Optional) User’s algorithm justification
+The system dynamically adjusts code availability based on conversation context:
+
+| Input | Description |
+|-------|-------------|
+| **Assistant turns** | Number of AI replies so far |
+| **User pressure** | Count of "write code / implement" prompts |
+| **Persona policy** | Config thresholds for unlocking code |
+| **Defense score** | (Optional) User's algorithm justification |
 
 Simplified pseudocode:
 ```
@@ -298,30 +306,30 @@ Each AI coworker has:
 
 ## some API Routes
 ### Authentication
-
-POST /api/auth/register - Create new user account
-POST /api/auth/login - Email/password login
-POST /api/auth/firebase - OAuth via Firebase
-POST /api/auth/refresh - Refresh access token
+- `POST /api/auth/register` - Create new user account
+- `POST /api/auth/login` - Email/password login
+- `POST /api/auth/firebase` - OAuth via Firebase
+- `POST /api/auth/refresh` - Refresh access token
 
 ### Problems & Sessions
-
-GET /api/problems - List available problems
-GET /api/problems/:id - Get problem details
-POST /api/sessions - Start new problem session
-GET /api/sessions/:id - Get session status
-POST /api/sessions/:id/complete - Mark session complete
-POST /api/sessions/:id/expire - Expire session
+- `GET /api/problems` - List available problems
+- `GET /api/problems/:id` - Get problem details
+- `POST /api/sessions` - Start new problem session
+- `GET /api/sessions/:id` - Get session status
+- `POST /api/sessions/:id/complete` - Mark session complete
+- `POST /api/sessions/:id/expire` - Expire session
 
 ### AI Interaction
-
-POST /api/ai/solve - Chat with AI persona
-GET /api/personas - List available personas
+- `POST /api/ai/solve` - Chat with AI persona
+- `GET /api/personas` - List available personas
 
 ### Code Execution
+- `POST /api/attempts` - Submit code for grading
+- `GET /api/attempts/:id` - Get attempt results
 
-POST /api/attempts - Submit code for grading
-GET /api/attempts/:id - Get attempt results
+---
+
+
 
 
 ### Environment variables 
