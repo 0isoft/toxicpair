@@ -196,7 +196,7 @@ sequenceDiagram
   end
 
   W->>DB: update attempt status + logs
-  FE->>API: GET /api/attempts/:id (polling)
+  FE->>API: GET /api/attempts/id (polling)
   API-->>FE: attempt status + logs
 ```
 ### Worker-based Isolated Runners
@@ -232,7 +232,7 @@ stateDiagram-v2
   state Active {
     [*] --> Running
     Running: snapshot persona config<br/>start timer (deadlineAt)
-    Running --> Running: GET /api/sessions/:id<br/>apply switcheroos
+    Running --> Running: GET /api/sessions/id<br/>apply switcheroos
   }
 
   Active --> Expired: deadline reached
