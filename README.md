@@ -54,8 +54,9 @@ flowchart LR
   Worker -. limits .-> CGroups
   Worker -->|logs/results| API
   API --> PG
-```
   API -. reads .-> Secrets
   Worker -. reads .-> Secrets
 
   UI <--> |polling / SSE (attempt status)| API
+  
+```
