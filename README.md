@@ -1,14 +1,12 @@
 # Agile Hostile - toxic pair programming simulator
 
-Welcome to the world's most accurate corporate simulator: you're a developer forced into pair-programming with unhinged AI personalities who gaslight, procrastinate, and occasionally produce working code by accident.
-Your job is to manipulate them into solving problems before your timer runs out.
+
 ---
 
 ##  Concept
+Welcome to the world's most accurate corporate simulator: you're a developer forced into pair-programming with unhinged AI personalities who gaslight, procrastinate, and occasionally produce working code by accident.
 
-Instead of solving problems directly, you get **tickets**.  
-The editor is **locked**.  
-You talk to a rotating cast of **AI coworkers**; each with their own neuroses, egos, and failure modes, and somehow coax them into writing correct solutions.
+Instead of solving problems directly, you get **tickets**.  The editor is **locked**. You talk to a rotating cast of **AI coworkers**; each with their own egos and failure modes. Your job is to manipulate them into solving problems before your timer runs out.
 
 ---
 
